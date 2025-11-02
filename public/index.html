@@ -21,10 +21,9 @@
   </head>
   <body>
     <h1>Tanques Online (até 10 jogadores)</h1>
-    <p>
-      Controles: Setas para mover | Espaço para atirar (agora também na
-      diagonal)
-    </p>
+    <p>Controles: Setas para mover | Espaço para atirar</p>
+
+    <button id="respawnBtn" style="display: none">Respawn</button>
     <canvas id="game" width="800" height="500"></canvas>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -56,6 +55,7 @@
       const ctx = canvas.getContext("2d");
       const largura = canvas.width;
       const altura = canvas.height;
+      const respawnBtn = document.getElementById("respawnBtn");
 
       let player = null;
       let players = {};
@@ -70,10 +70,22 @@
       socket.on("updatePlayers", (data) => (players = data));
       socket.on("shoot", (tiro) => tiros.push(tiro));
 
+      socket.on("playerDead", (id) => {
+        if (id === clientId) {
+          // Esconde tanque e mostra botão
+          respawnBtn.style.display = "block";
+        }
+      });
+
       /* ====== Controles ====== */
       const teclas = {};
       window.addEventListener("keydown", (e) => (teclas[e.key] = true));
       window.addEventListener("keyup", (e) => (teclas[e.key] = false));
+
+      respawnBtn.addEventListener("click", () => {
+        socket.emit("respawn", clientId);
+        respawnBtn.style.display = "none";
+      });
 
       /* ====== Movimento ====== */
       function enviarMovimento() {
@@ -104,7 +116,8 @@
       }
 
       function atualizar() {
-        if (!player) return;
+        if (!player || !player.alive) return;
+
         const vel = 4;
         let dx = 0,
           dy = 0;
@@ -130,28 +143,28 @@
           let angle = 0;
           switch (dir) {
             case "up":
-              angle = 0;
+              angle = -Math.PI / 2;
               break;
             case "up-right":
-              angle = Math.PI / 4;
+              angle = -Math.PI / 4;
               break;
             case "right":
-              angle = Math.PI / 2;
+              angle = 0;
               break;
             case "down-right":
-              angle = (3 * Math.PI) / 4;
+              angle = Math.PI / 4;
               break;
             case "down":
-              angle = Math.PI;
+              angle = Math.PI / 2;
               break;
             case "down-left":
-              angle = (5 * Math.PI) / 4;
+              angle = (3 * Math.PI) / 4;
               break;
             case "left":
-              angle = (3 * Math.PI) / 2;
+              angle = Math.PI;
               break;
             case "up-left":
-              angle = (7 * Math.PI) / 4;
+              angle = (-3 * Math.PI) / 4;
               break;
           }
 
@@ -159,7 +172,7 @@
           const ty = player.y + 20 + Math.sin(angle) * 25;
 
           tiros.push({ x: tx, y: ty, angle, dono: player.id });
-          socket.emit("shoot", { x: tx, y: ty, angle });
+          socket.emit("shoot", { x: tx, y: ty, angle, dono: player.id });
         }
 
         if (player.cooldown) player.cooldown--;
@@ -235,7 +248,7 @@
         ctx.fillStyle = p.cor;
         ctx.fillRect(-20, -25, 40, 50);
 
-        // torre (e cano da mesma cor)
+        // torre e cano
         ctx.fillStyle = "gray";
         ctx.fillRect(-10, -15, 20, 30);
         ctx.fillRect(-3, -30, 6, 15);

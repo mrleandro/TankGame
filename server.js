@@ -62,6 +62,7 @@ io.on("connection", (socket) => {
         dir: "up",
         vida: 3,
         cor: randomColor(),
+        alive: true,
       };
       console.log("Novo jogador conectado:", clientId);
     }
@@ -72,6 +73,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("move", (data) => {
+    if (!players[socket.id] || !players[socket.id].alive) return;
     if (players[socket.id]) {
       Object.assign(players[socket.id], data);
       io.emit("updatePlayers", players);
@@ -79,15 +81,34 @@ io.on("connection", (socket) => {
   });
 
   socket.on("shoot", (tiro) => {
+    if (!players[socket.id]?.alive) return;
     socket.broadcast.emit("shoot", { ...tiro, dono: socket.id });
   });
 
   socket.on("hit", (targetId) => {
+    if (!players[targetId] || !players[targetId].alive) return;
     if (players[targetId]) {
       players[targetId].vida -= 1;
-      if (players[targetId].vida <= 0) delete players[targetId];
+      if (players[targetId].vida <= 0) {
+        players[targetId].alive = false;
+        io.emit("playerDead", players[targetId].clientId);
+      }
       io.emit("updatePlayers", players);
     }
+  });
+
+  socket.on("respawn", (clientId) => {
+    players[socket.id] = {
+      id: socket.id,
+      clientId,
+      x: Math.random() * 760,
+      y: Math.random() * 460,
+      dir: "up",
+      cor: "#" + Math.floor(Math.random() * 16777215).toString(16),
+      vida: 3,
+      alive: true,
+    };
+    io.emit("updatePlayers", players);
   });
 
   socket.on("disconnect", () => {
