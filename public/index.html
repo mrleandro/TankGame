@@ -195,8 +195,8 @@
               t.y < p.y + 40 &&
               t.y + 6 > p.y
             ) {
-              socket.emit("hit", id);
               t.x = -100; // remove
+              socket.emit("hit", id);
             }
           }
         });
