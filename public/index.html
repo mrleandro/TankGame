@@ -21,21 +21,23 @@
   </head>
   <body>
     <h1>Tanques Online (até 10 jogadores)</h1>
-    <p>Controles: Setas para mover | Espaço para atirar</p>
+    <p>
+      Controles: Setas para mover | Espaço para atirar (agora também na
+      diagonal)
+    </p>
     <canvas id="game" width="800" height="500"></canvas>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      // ID único do jogador (permanece mesmo após atualizar a página)
+      /* ====== ID persistente ====== */
       let clientId = localStorage.getItem("tank_client_id");
-
       if (!clientId) {
         clientId = crypto.randomUUID();
         localStorage.setItem("tank_client_id", clientId);
       }
 
+      /* ====== Configuração ====== */
       const socket = io();
-
       socket.emit("join", clientId);
 
       const canvas = document.getElementById("game");
@@ -47,80 +49,117 @@
       let players = {};
       let tiros = [];
 
-      // Se o servidor estiver cheio
+      /* ====== Eventos do servidor ====== */
       socket.on("full", (msg) => alert(msg));
-
-      // Inicialização do jogador
       socket.on("init", (data) => {
         player = data.players[data.id];
         players = data.players;
       });
+      socket.on("updatePlayers", (data) => (players = data));
+      socket.on("shoot", (tiro) => tiros.push(tiro));
 
-      // Atualizações de estado do servidor
-      socket.on("updatePlayers", (data) => {
-        players = data;
-      });
-
-      // Quando outro jogador atira
-      socket.on("shoot", (tiro) => {
-        tiros.push(tiro);
-      });
-
-      // Controles
+      /* ====== Controles ====== */
       const teclas = {};
       window.addEventListener("keydown", (e) => (teclas[e.key] = true));
       window.addEventListener("keyup", (e) => (teclas[e.key] = false));
 
+      /* ====== Movimento ====== */
       function enviarMovimento() {
         if (!player) return;
         socket.emit("move", { x: player.x, y: player.y, dir: player.dir });
       }
 
+      /* Calcular direção com diagonais */
+      function atualizarDirecao() {
+        let dx = 0,
+          dy = 0;
+        if (teclas["ArrowUp"]) dy = -1;
+        if (teclas["ArrowDown"]) dy = 1;
+        if (teclas["ArrowLeft"]) dx = -1;
+        if (teclas["ArrowRight"]) dx = 1;
+
+        if (dx === 0 && dy === 0) return player.dir; // sem movimento
+
+        // Determina direção textual (8 direções)
+        if (dx === 0 && dy === -1) return "up";
+        if (dx === 0 && dy === 1) return "down";
+        if (dx === -1 && dy === 0) return "left";
+        if (dx === 1 && dy === 0) return "right";
+        if (dx === 1 && dy === -1) return "up-right";
+        if (dx === -1 && dy === -1) return "up-left";
+        if (dx === 1 && dy === 1) return "down-right";
+        if (dx === -1 && dy === 1) return "down-left";
+      }
+
       function atualizar() {
         if (!player) return;
-
         const vel = 4;
+        let dx = 0,
+          dy = 0;
 
-        if (teclas["ArrowUp"]) {
-          player.y -= vel;
-          player.dir = "up";
-        }
-        if (teclas["ArrowDown"]) {
-          player.y += vel;
-          player.dir = "down";
-        }
-        if (teclas["ArrowLeft"]) {
-          player.x -= vel;
-          player.dir = "left";
-        }
-        if (teclas["ArrowRight"]) {
-          player.x += vel;
-          player.dir = "right";
+        if (teclas["ArrowUp"]) dy -= 1;
+        if (teclas["ArrowDown"]) dy += 1;
+        if (teclas["ArrowLeft"]) dx -= 1;
+        if (teclas["ArrowRight"]) dx += 1;
+
+        if (dx !== 0 || dy !== 0) {
+          const len = Math.hypot(dx, dy);
+          player.x += (dx / len) * vel;
+          player.y += (dy / len) * vel;
+          player.dir = atualizarDirecao();
         }
 
         enviarMovimento();
 
-        // Atirar com espaço
         if (teclas[" "] && !player.cooldown) {
           player.cooldown = 20;
-          const tx = player.x + 20,
-            ty = player.y + 20;
-          tiros.push({ x: tx, y: ty, dir: player.dir, dono: player.id });
-          socket.emit("shoot", { x: tx, y: ty, dir: player.dir });
+
+          const dir = player.dir;
+          let angle = 0;
+          switch (dir) {
+            case "up":
+              angle = 0;
+              break;
+            case "up-right":
+              angle = Math.PI / 4;
+              break;
+            case "right":
+              angle = Math.PI / 2;
+              break;
+            case "down-right":
+              angle = (3 * Math.PI) / 4;
+              break;
+            case "down":
+              angle = Math.PI;
+              break;
+            case "down-left":
+              angle = (5 * Math.PI) / 4;
+              break;
+            case "left":
+              angle = (3 * Math.PI) / 2;
+              break;
+            case "up-left":
+              angle = (7 * Math.PI) / 4;
+              break;
+          }
+
+          const tx = player.x + 20 + Math.cos(angle) * 25;
+          const ty = player.y + 20 + Math.sin(angle) * 25;
+
+          tiros.push({ x: tx, y: ty, angle, dono: player.id });
+          socket.emit("shoot", { x: tx, y: ty, angle });
         }
 
         if (player.cooldown) player.cooldown--;
       }
 
+      /* ====== Tiros ====== */
       function atualizarTiros() {
         tiros.forEach((t) => {
-          if (t.dir === "up") t.y -= 8;
-          if (t.dir === "down") t.y += 8;
-          if (t.dir === "left") t.x -= 8;
-          if (t.dir === "right") t.x += 8;
+          t.x += Math.cos(t.angle) * 8;
+          t.y += Math.sin(t.angle) * 8;
         });
 
-        // Verificar colisões simples
         tiros.forEach((t) => {
           for (const id in players) {
             const p = players[id];
@@ -132,7 +171,7 @@
               t.y + 6 > p.y
             ) {
               socket.emit("hit", id);
-              t.x = -100; // remove o tiro
+              t.x = -100; // remove
             }
           }
         });
@@ -142,24 +181,74 @@
         );
       }
 
+      /* ====== Desenhar tanque ====== */
+      function desenharTanque(p) {
+        const cx = p.x + 20;
+        const cy = p.y + 20;
+
+        // converte direção em ângulo (em radianos)
+        let ang = 0;
+        switch (p.dir) {
+          case "up":
+            ang = 0;
+            break;
+          case "up-right":
+            ang = Math.PI / 4;
+            break;
+          case "right":
+            ang = Math.PI / 2;
+            break;
+          case "down-right":
+            ang = (3 * Math.PI) / 4;
+            break;
+          case "down":
+            ang = Math.PI;
+            break;
+          case "down-left":
+            ang = (5 * Math.PI) / 4;
+            break;
+          case "left":
+            ang = (3 * Math.PI) / 2;
+            break;
+          case "up-left":
+            ang = (7 * Math.PI) / 4;
+            break;
+        }
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(ang);
+
+        // corpo
+        ctx.fillStyle = p.cor;
+        ctx.fillRect(-20, -25, 40, 50);
+
+        // torre (e cano da mesma cor)
+        ctx.fillStyle = "gray";
+        ctx.fillRect(-10, -15, 20, 30);
+        ctx.fillRect(-3, -30, 6, 15);
+
+        ctx.restore();
+
+        // vida
+        ctx.fillStyle = "white";
+        ctx.font = "14px Arial";
+        ctx.fillText(`❤️ ${p.vida}`, p.x, p.y - 8);
+      }
+
+      /* ====== Desenhar tudo ====== */
       function desenhar() {
         ctx.clearRect(0, 0, largura, altura);
 
-        // desenhar jogadores
         for (const id in players) {
-          const p = players[id];
-          ctx.fillStyle = p.cor;
-          ctx.fillRect(p.x, p.y, 40, 40);
-          ctx.fillStyle = "white";
-          ctx.font = "14px Arial";
-          ctx.fillText(`❤️ ${p.vida}`, p.x, p.y - 8);
+          desenharTanque(players[id]);
         }
 
-        // desenhar tiros
         ctx.fillStyle = "red";
         tiros.forEach((t) => ctx.fillRect(t.x, t.y, 6, 6));
       }
 
+      /* ====== Loop principal ====== */
       function loop() {
         atualizar();
         atualizarTiros();
