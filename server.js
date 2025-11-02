@@ -6,6 +6,7 @@ const io = require("socket.io")(http);
 app.use(express.static("public"));
 
 const MAX_PLAYERS = 10;
+const MAX_LIFE = 6;
 const players = {};
 
 function randomColor() {
@@ -60,7 +61,7 @@ io.on("connection", (socket) => {
         x: pos.x,
         y: pos.y,
         dir: "up",
-        vida: 6,
+        vida: MAX_LIFE,
         cor: randomColor(),
         alive: true,
       };
@@ -98,14 +99,16 @@ io.on("connection", (socket) => {
   });
 
   socket.on("respawn", (clientId) => {
+    const pos = randomPosition();
+
     players[socket.id] = {
       id: socket.id,
       clientId,
-      x: Math.random() * 760,
-      y: Math.random() * 460,
+      x: pos.x,
+      y: pos.y,
       dir: "up",
-      cor: "#" + Math.floor(Math.random() * 16777215).toString(16),
-      vida: 3,
+      cor: randomColor(),
+      vida: MAX_LIFE,
       alive: true,
     };
     io.emit("updatePlayers", players);
