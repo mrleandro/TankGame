@@ -60,7 +60,7 @@ io.on("connection", (socket) => {
         x: pos.x,
         y: pos.y,
         dir: "up",
-        vida: 3,
+        vida: 6,
         cor: randomColor(),
         alive: true,
       };
