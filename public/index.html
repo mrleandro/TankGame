@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <title>Tanques 1v1 Online</title>
+    <title>Tanques Online - até 10 Jogadores</title>
     <style>
       body {
         background: #111;
@@ -20,13 +20,24 @@
     </style>
   </head>
   <body>
-    <h1>Tanques 1v1 Online</h1>
-    <p>Controles: W A S D para mover | Espaço para atirar</p>
+    <h1>Tanques Online (até 10 jogadores)</h1>
+    <p>Controles: Setas para mover | Espaço para atirar</p>
     <canvas id="game" width="800" height="500"></canvas>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
+      // ID único do jogador (permanece mesmo após atualizar a página)
+      let clientId = localStorage.getItem("tank_client_id");
+
+      if (!clientId) {
+        clientId = crypto.randomUUID();
+        localStorage.setItem("tank_client_id", clientId);
+      }
+
       const socket = io();
+
+      socket.emit("join", clientId);
+
       const canvas = document.getElementById("game");
       const ctx = canvas.getContext("2d");
       const largura = canvas.width;
@@ -36,34 +47,29 @@
       let players = {};
       let tiros = [];
 
+      // Se o servidor estiver cheio
+      socket.on("full", (msg) => alert(msg));
+
+      // Inicialização do jogador
       socket.on("init", (data) => {
-        player = {
-          id: data.id,
-          num: data.num,
-          x: data.num === 1 ? 150 : 600,
-          y: 220,
-          dir: "up",
-          vida: 3,
-        };
+        player = data.players[data.id];
+        players = data.players;
       });
 
+      // Atualizações de estado do servidor
       socket.on("updatePlayers", (data) => {
         players = data;
       });
 
+      // Quando outro jogador atira
       socket.on("shoot", (tiro) => {
         tiros.push(tiro);
       });
 
+      // Controles
       const teclas = {};
-      window.addEventListener(
-        "keydown",
-        (e) => (teclas[e.key.toLowerCase()] = true)
-      );
-      window.addEventListener(
-        "keyup",
-        (e) => (teclas[e.key.toLowerCase()] = false)
-      );
+      window.addEventListener("keydown", (e) => (teclas[e.key] = true));
+      window.addEventListener("keyup", (e) => (teclas[e.key] = false));
 
       function enviarMovimento() {
         if (!player) return;
@@ -74,19 +80,20 @@
         if (!player) return;
 
         const vel = 4;
-        if (teclas["arrowup"]) {
+
+        if (teclas["ArrowUp"]) {
           player.y -= vel;
           player.dir = "up";
         }
-        if (teclas["arrowdown"]) {
+        if (teclas["ArrowDown"]) {
           player.y += vel;
           player.dir = "down";
         }
-        if (teclas["arrowleft"]) {
+        if (teclas["ArrowLeft"]) {
           player.x -= vel;
           player.dir = "left";
         }
-        if (teclas["arrowright"]) {
+        if (teclas["ArrowRight"]) {
           player.x += vel;
           player.dir = "right";
         }
@@ -98,24 +105,11 @@
           player.cooldown = 20;
           const tx = player.x + 20,
             ty = player.y + 20;
-          tiros.push({ x: tx, y: ty, dir: player.dir, dono: player.num });
+          tiros.push({ x: tx, y: ty, dir: player.dir, dono: player.id });
           socket.emit("shoot", { x: tx, y: ty, dir: player.dir });
         }
+
         if (player.cooldown) player.cooldown--;
-      }
-
-      function desenhar() {
-        ctx.clearRect(0, 0, largura, altura);
-        for (const id in players) {
-          const p = players[id];
-          ctx.fillStyle = p.num === 1 ? "lime" : "cyan";
-          ctx.fillRect(p.x, p.y, 40, 40);
-          ctx.fillStyle = "white";
-          ctx.fillText(`P${p.num}: ${p.vida}`, p.x, p.y - 10);
-        }
-
-        ctx.fillStyle = "red";
-        tiros.forEach((t) => ctx.fillRect(t.x, t.y, 6, 6));
       }
 
       function atualizarTiros() {
@@ -126,19 +120,19 @@
           if (t.dir === "right") t.x += 8;
         });
 
-        // colisão simples
+        // Verificar colisões simples
         tiros.forEach((t) => {
           for (const id in players) {
             const p = players[id];
             if (
-              t.dono !== p.num &&
+              t.dono !== id &&
               t.x < p.x + 40 &&
               t.x + 6 > p.x &&
               t.y < p.y + 40 &&
               t.y + 6 > p.y
             ) {
-              socket.emit("hit", p.num);
-              t.x = -100; // remove tiro
+              socket.emit("hit", id);
+              t.x = -100; // remove o tiro
             }
           }
         });
@@ -146,6 +140,24 @@
         tiros = tiros.filter(
           (t) => t.x > 0 && t.x < largura && t.y > 0 && t.y < altura
         );
+      }
+
+      function desenhar() {
+        ctx.clearRect(0, 0, largura, altura);
+
+        // desenhar jogadores
+        for (const id in players) {
+          const p = players[id];
+          ctx.fillStyle = p.cor;
+          ctx.fillRect(p.x, p.y, 40, 40);
+          ctx.fillStyle = "white";
+          ctx.font = "14px Arial";
+          ctx.fillText(`❤️ ${p.vida}`, p.x, p.y - 8);
+        }
+
+        // desenhar tiros
+        ctx.fillStyle = "red";
+        tiros.forEach((t) => ctx.fillRect(t.x, t.y, 6, 6));
       }
 
       function loop() {
